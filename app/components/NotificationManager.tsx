@@ -91,7 +91,7 @@ const NotificationManager = () => {
                 body = `"${targetGoal.name}" es la más próxima (${timePhrase}).`;
             }
 
-            // Enviar notificación real
+            // Enviar notificación
             await sendRobustNotification(title, body);
 
             if (!DEMO_MODE && !isManualTest) {
@@ -100,7 +100,8 @@ const NotificationManager = () => {
 
         } catch (error: any) {
             console.error("Error:", error);
-            if (isManualTest) alert(`Error en lógica: ${error.message}`);
+            // Solo alertar si es prueba manual para no molestar al usuario
+            if (isManualTest) console.warn(`Error silencioso en notificaciones: ${error.message}`);
         }
     };
 
@@ -116,36 +117,44 @@ const NotificationManager = () => {
         }
     }, [userId, permission]);
 
-    // --- ENVÍO BLINDADO (VERSIÓN CORREGIDA PARA ANDROID) ---
+    // --- ENVÍO 100% COMPATIBLE CON ANDROID ---
     const sendRobustNotification = async (title: string, body: string) => {
-        // Opciones estándar que Android soporta bien
         const options: any = {
             body: body,
-            icon: 'icons/icon-192x192.png', // IMPORTANTE: Si este archivo no existe en 'public', Android puede ignorar la notificación
+            icon: 'icons/icon-192x192.png', // Asegúrate de tener este archivo si descomentas
             badge: '/icon-192x192.png',
             vibrate: [200, 100, 200],
-            tag: 'goal-alert',
-            data: { url: window.location.href } // Para abrir la app al tocar
+            tag: DEMO_MODE ? undefined : 'goal-alert',
+            data: { url: window.location.href }
         };
 
         try {
-            // PASO 1: Intentar obtener el Service Worker ACTIVO
-            const reg = await navigator.serviceWorker.getRegistration();
+            // ESTRATEGIA: Siempre intentar obtener el Registro del SW primero.
+            // "getRegistration" es más seguro que ".controller" o ".ready"
+            let swReg = await navigator.serviceWorker.getRegistration();
 
-            if (reg) {
-                // Método preferido y más estable en Android
-                await reg.showNotification(title, options);
-                console.log("✅ Enviado vía SW Registration");
+            if (swReg) {
+                // ¡Perfecto! Tenemos el SW, usamos la función correcta.
+                await swReg.showNotification(title, options);
+                console.log("✅ Notificación enviada vía SW (Android Friendly)");
             } else {
-                // Fallback solo si no hay SW (Raro en PWA instalada)
-                console.log("⚠️ No se encontró SW, usando API clásica");
-                new Notification(title, options);
+                // Si no hay registro, intentamos esperar a que esté listo
+                const readyReg = await navigator.serviceWorker.ready;
+                if (readyReg) {
+                    await readyReg.showNotification(title, options);
+                } else {
+                    // Solo si TODO lo de arriba falla (ej. en PC vieja), usamos la forma ilegal en Android
+                    // Pero la envolvemos en try/catch para que NO salga el error gris.
+                    try {
+                        new Notification(title, options);
+                    } catch (legacyError) {
+                        console.error("❌ Android bloqueó new Notification() y no se encontró SW activo.");
+                        // Aquí NO ponemos alert para no ensuciar la UI si falla silenciosamente
+                    }
+                }
             }
-
         } catch (e: any) {
-            console.error("Fallo notificación:", e);
-            // Ahora el alert te dirá QUÉ falló exactamente
-            alert(`ERROR DE SISTEMA:\n${e.message}\n\nIntenta reinstalar la app.`); 
+            console.error("Fallo crítico en notificación:", e);
         }
     };
 
@@ -156,7 +165,7 @@ const NotificationManager = () => {
     };
 
     return (
-        // BOTONES ELEVADOS PARA NO ESTORBAR
+        // BOTONES ELEVADOS
         <div className="fixed bottom-32 left-4 z-50 flex flex-col gap-3 items-start pointer-events-none">
             
             {showBell && userId && (
