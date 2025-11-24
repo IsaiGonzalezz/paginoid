@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
-import { collection, query, getDocs } from 'firebase/firestore'; // Quitamos orderBy de aquí
+import { collection, query, getDocs } from 'firebase/firestore';
 import { db } from '@/app/firebase/firebaseConfig';
 import { useAuth } from './AuthProvider';
 import { BellRing, Send, StopCircle } from 'lucide-react';
@@ -39,37 +39,31 @@ const NotificationManager = () => {
         }
 
         try {
-            // CAMBIO CLAVE: Traemos TODO sin ordenar para evitar errores de índice en móvil
             const q = query(collection(db, 'users', userId, 'goals'));
             const snapshot = await getDocs(q);
             
-            // 1. Procesamos y Filtramos en el dispositivo (Más seguro)
             let activeGoals = snapshot.docs
                 .map(doc => ({ id: doc.id, ...doc.data() } as any))
                 .filter(g => {
-                    // Asegurar que existen los campos
                     const current = Number(g.current) || 0;
                     const total = Number(g.total) || 1;
                     return current < total;
                 });
 
             if (activeGoals.length === 0) {
-                if (isManualTest) alert(`Se encontraron ${snapshot.docs.length} metas, pero 0 pendientes. Revisa si ya las completaste.`);
+                if (isManualTest) alert(`0 metas pendientes encontradas.`);
                 return;
             }
 
-            // 2. Ordenamos nosotros mismos por fecha (deadline)
             activeGoals.sort((a, b) => {
                 const dateA = a.deadline?.toDate ? a.deadline.toDate() : new Date(2100,0,1);
                 const dateB = b.deadline?.toDate ? b.deadline.toDate() : new Date(2100,0,1);
                 return dateA.getTime() - dateB.getTime();
             });
 
-            // 3. Tomamos la primera (la más urgente)
             const targetGoal = activeGoals[0];
             const count = activeGoals.length;
             
-            // Cálculos de tiempo
             const now = new Date();
             const deadlineDate = targetGoal.deadline?.toDate ? targetGoal.deadline.toDate() : new Date();
             
@@ -80,7 +74,6 @@ const NotificationManager = () => {
             const diffTime = deadlineClean.getTime() - now.getTime();
             const daysLeft = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
 
-            // 4. Construir Mensaje
             let title = "";
             let body = "";
             let timePhrase = "";
@@ -94,11 +87,11 @@ const NotificationManager = () => {
                 title = "🎯 Tu Meta Actual";
                 body = `Faltan ${daysLeft} días para terminar "${targetGoal.name}".`;
             } else {
-                title = "⚠️ Meta Prioritaria";
+                title = "⚠️ Prioridad";
                 body = `"${targetGoal.name}" es la más próxima (${timePhrase}).`;
             }
 
-            // 5. Enviar Notificación Real
+            // Enviar notificación real
             await sendRobustNotification(title, body);
 
             if (!DEMO_MODE && !isManualTest) {
@@ -106,12 +99,11 @@ const NotificationManager = () => {
             }
 
         } catch (error: any) {
-            console.error("Error notificaciones:", error);
-            if (isManualTest) alert(`Error técnico: ${error.message}`);
+            console.error("Error:", error);
+            if (isManualTest) alert(`Error en lógica: ${error.message}`);
         }
     };
 
-    // Timer
     useEffect(() => {
         if (!userId || permission !== 'granted') return;
 
@@ -124,31 +116,36 @@ const NotificationManager = () => {
         }
     }, [userId, permission]);
 
-    // --- ENVÍO BLINDADO ---
+    // --- ENVÍO BLINDADO (VERSIÓN CORREGIDA PARA ANDROID) ---
     const sendRobustNotification = async (title: string, body: string) => {
+        // Opciones estándar que Android soporta bien
         const options: any = {
             body: body,
-            // Icono comentado para evitar errores 404 si no existe
-            // icon: '/icon-192x192.png', 
-            vibrate: [200, 100, 200], 
-            tag: DEMO_MODE ? undefined : 'goal-alert',
-            requireInteraction: true 
+            icon: 'icons/icon-192x192.png', // IMPORTANTE: Si este archivo no existe en 'public', Android puede ignorar la notificación
+            badge: '/icon-192x192.png',
+            vibrate: [200, 100, 200],
+            tag: 'goal-alert',
+            data: { url: window.location.href } // Para abrir la app al tocar
         };
 
         try {
-            // Intento 1: Service Worker (Android PWA)
-            if (navigator.serviceWorker && navigator.serviceWorker.controller) {
-                const reg = await navigator.serviceWorker.ready;
+            // PASO 1: Intentar obtener el Service Worker ACTIVO
+            const reg = await navigator.serviceWorker.getRegistration();
+
+            if (reg) {
+                // Método preferido y más estable en Android
                 await reg.showNotification(title, options);
-            } 
-            // Intento 2: API Clásica (Fallback)
-            else {
+                console.log("✅ Enviado vía SW Registration");
+            } else {
+                // Fallback solo si no hay SW (Raro en PWA instalada)
+                console.log("⚠️ No se encontró SW, usando API clásica");
                 new Notification(title, options);
             }
-        } catch (e) {
+
+        } catch (e: any) {
             console.error("Fallo notificación:", e);
-            // Solo si falla todo lo demás, usamos alert como último recurso
-            alert(`NOTIFICACIÓN:\n\n${title}\n${body}`); 
+            // Ahora el alert te dirá QUÉ falló exactamente
+            alert(`ERROR DE SISTEMA:\n${e.message}\n\nIntenta reinstalar la app.`); 
         }
     };
 
@@ -159,7 +156,7 @@ const NotificationManager = () => {
     };
 
     return (
-        // BOTONES ARRIBA DEL MENÚ INFERIOR
+        // BOTONES ELEVADOS PARA NO ESTORBAR
         <div className="fixed bottom-32 left-4 z-50 flex flex-col gap-3 items-start pointer-events-none">
             
             {showBell && userId && (
