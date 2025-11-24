@@ -1,0 +1,63 @@
+{
+    "name": "Paginoid: Gestor y Cronómetro de Lectura",
+    "short_name": "Paginoid",
+    "description": "Gestiona tu biblioteca personal, registra el tiempo de lectura con un cronómetro y establece metas.",
+    
+    "display": "standalone",
+    "start_url": "/",
+    "scope": "/",
+    "orientation": "portrait",
+    
+    "theme_color": "#2563EB", 
+    "background_color": "#FFFFFF", 
+
+    "id": "/",
+    "lang": "es", 
+    "dir": "auto",
+    
+    "icons": [
+        {
+            "src": "icons/icon-72x72.png",
+            "sizes": "72x72",
+            "type": "image/png"
+        },
+        {
+            "src": "icons/icon-192x192.png",
+            "sizes": "192x192",
+            "type": "image/png",
+            "purpose": "any"
+        },
+        {
+            "src": "icons/icon-512x512.png",
+            "sizes": "512x512",
+            "type": "image/png",
+            "purpose": "any"
+        },
+        {
+            "src": "icons/icon-512x512-maskable.png", 
+            "sizes": "512x512",
+            "type": "image/png",
+            "purpose": "maskable" 
+        }
+    ],
+    
+    "shortcuts": [
+        {
+            "name": "Iniciar Lectura",
+            "short_name": "Cronómetro",
+            "description": "Inicia o pausa la sesión de lectura actual.",
+            "url": "/cronometro",
+            "icons": [{"src": "icons/shortcut-cronometro.png", "sizes": "96x96"}]
+        },
+        {
+            "name": "Ver Metas",
+            "short_name": "Metas",
+            "description": "Revisa el progreso de tus retos de lectura.",
+            "url": "/metas",
+            "icons": [{"src": "icons/shortcut-metas.png", "sizes": "96x96"}]
+        }
+    ],
+
+    "screenshots": [],
+    "categories": ["books", "lifestyle", "productivity"] 
+}
