@@ -6,9 +6,7 @@ import { db } from '@/app/firebase/firebaseConfig';
 import { useAuth } from './AuthProvider';
 import { BellRing, Send, StopCircle } from 'lucide-react';
 
-// --- CONFIGURACIÓN DE PRUEBA ---
-// Pon esto en TRUE para que te avise cada 5 segundos (Modo Demo)
-// Pon esto en FALSE para la versión real (1 vez al día)
+// --- CONFIGURACIÓN ---
 const DEMO_MODE = true; 
 
 const NotificationManager = () => {
@@ -29,7 +27,6 @@ const NotificationManager = () => {
     const runCheck = async (isManualTest = false) => {
         if (!userId || permission !== 'granted') return;
 
-        // 1. EVITAR SPAM (Solo aplica si NO estamos en modo DEMO ni prueba manual)
         const todayKey = new Date().toDateString(); 
         const lastNotified = localStorage.getItem(`last_notification_check_${userId}`);
 
@@ -39,7 +36,6 @@ const NotificationManager = () => {
         }
 
         try {
-            // 2. Obtener metas
             const q = query(collection(db, 'users', userId, 'goals'), orderBy('deadline', 'asc'));
             const snapshot = await getDocs(q);
             
@@ -48,11 +44,10 @@ const NotificationManager = () => {
                 .filter(g => (g.current || 0) < (g.total || 1));
 
             if (activeGoals.length === 0) {
-                if (isManualTest) console.log("No hay metas pendientes.");
+                if (isManualTest) alert("No tienes metas pendientes para probar.");
                 return;
             }
 
-            // 3. Calcular mensaje
             const targetGoal = activeGoals[0];
             const count = activeGoals.length;
             const now = new Date();
@@ -82,10 +77,8 @@ const NotificationManager = () => {
                 body = `"${targetGoal.name}" es la más próxima (${timePhrase}).`;
             }
 
-            // 4. Enviar
             await sendRobustNotification(title, body);
 
-            // 5. Guardar registro (Solo si NO estamos en DEMO)
             if (!DEMO_MODE && !isManualTest) {
                 localStorage.setItem(`last_notification_check_${userId}`, todayKey);
             }
@@ -95,30 +88,27 @@ const NotificationManager = () => {
         }
     };
 
-    // --- TIMER INTELIGENTE ---
     useEffect(() => {
         if (!userId || permission !== 'granted') return;
 
         if (DEMO_MODE) {
-            // MODO LOCO: Cada 10 segundos (5 es demasiado rápido y se enciman)
-            console.log("🔥 MODO DEMO ACTIVADO: Notificando cada 10s");
             const interval = setInterval(() => runCheck(true), 10000);
             return () => clearInterval(interval);
         } else {
-            // MODO NORMAL: Una vez al entrar (con delay de 3s)
             const timer = setTimeout(() => runCheck(false), 3000);
             return () => clearTimeout(timer);
         }
     }, [userId, permission]);
 
-    // --- ENVÍO ---
+    // --- ENVÍO BLINDADO PARA ANDROID ---
     const sendRobustNotification = async (title: string, body: string) => {
         const options: any = {
             body: body,
-            icon: 'icons/icon-192x192.png', // Descomenta si subiste la imagen
-            vibrate: [200, 100, 200],
-            tag: DEMO_MODE ? undefined : 'goal-alert', // En demo quitamos el tag para que se acumulen si quieres
-            requireInteraction: false
+            // IMPORTANTE: Comentado para evitar error 404 en Android si no existe la imagen
+            // icon: '/icon-192x192.png', 
+            vibrate: [200, 100, 200], // Vibración fuerte
+            tag: DEMO_MODE ? undefined : 'goal-alert',
+            requireInteraction: true 
         };
 
         try {
@@ -130,6 +120,8 @@ const NotificationManager = () => {
             }
         } catch (e) {
             console.error("Fallo notificación:", e);
+            // Fallback visual si falla el sistema nativo
+            // alert(title + "\n" + body); 
         }
     };
 
@@ -139,11 +131,11 @@ const NotificationManager = () => {
         if (result === 'granted') setShowBell(false);
     };
 
-    // --- DISEÑO NUEVO (Izquierda Abajo) ---
+    // --- DISEÑO AJUSTADO (MÁS ARRIBA) ---
     return (
-        <div className="fixed bottom-6 left-6 z-50 flex flex-col gap-3 items-start pointer-events-none">
+        // CAMBIO: bottom-32 (aprox 130px arriba) para librar el menú inferior
+        <div className="fixed bottom-32 left-4 z-50 flex flex-col gap-3 items-start pointer-events-none">
             
-            {/* Botón Permiso */}
             {showBell && userId && (
                 <button
                     onClick={handleRequestPermission}
@@ -153,22 +145,20 @@ const NotificationManager = () => {
                 </button>
             )}
 
-            {/* Botón Probar (Visible siempre para ti) */}
             {userId && (
                 <div className="pointer-events-auto flex flex-col gap-2">
                     <button
                         onClick={() => runCheck(true)} 
-                        className="bg-gray-900/80 backdrop-blur-sm text-white px-4 py-2 rounded-lg shadow-lg flex items-center gap-2 text-xs font-bold hover:bg-gray-800 transition-all border border-gray-700"
+                        className="bg-gray-900/90 backdrop-blur-sm text-white px-4 py-3 rounded-xl shadow-xl flex items-center gap-2 text-xs font-bold border border-gray-700 active:scale-95 transition-all"
                     >
-                        <Send className="w-3 h-3" /> 
-                        Test Push Manual
+                        <Send className="w-4 h-4 text-green-400" /> 
+                        Probar Push
                     </button>
                     
-                    {/* Indicador visual de modo demo */}
                     {DEMO_MODE && (
-                        <span className="bg-red-500/90 text-white px-3 py-1 rounded-full text-[10px] font-bold flex items-center gap-1 animate-pulse shadow-lg">
+                        <span className="bg-red-500/90 text-white px-3 py-1 rounded-full text-[10px] font-bold flex items-center gap-1 animate-pulse shadow-lg backdrop-blur-sm">
                             <StopCircle className="w-3 h-3" />
-                            Modo Demo (Auto 10s)
+                            Demo (10s)
                         </span>
                     )}
                 </div>
