@@ -16,15 +16,14 @@ const firebaseConfig = {
   appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID,
 };
 
-// 1. Inicializar App (Patrón Singleton para Next.js)
+
 const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
 const auth = getAuth(app);
 
-// 2. Inicializar Firestore con Persistencia (BLINDADO)
 let db : any;
 
 try {
-  // Intentamos inicializar con la configuración de caché robusta
+  // configuración de caché
   db = initializeFirestore(app, {
     localCache: persistentLocalCache({
       tabManager: persistentMultipleTabManager()
@@ -32,8 +31,6 @@ try {
   });
   console.log(" Firestore inicializado con persistencia (OFFLINE SUPPORT)");
 } catch (e) {
-  // Si falla (porque ya estaba inicializada), usamos la instancia existente
-  // Esto pasa mucho en desarrollo con Next.js
   console.warn(" Usando instancia Firestore existente (Persistencia puede variar según carga inicial)");
   db = getFirestore(app);
 }

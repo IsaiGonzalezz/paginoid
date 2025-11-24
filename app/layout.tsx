@@ -1,6 +1,7 @@
 // app/layout.tsx
 import './globals.css';
 import { AuthProvider } from './components/AuthProvider';
+import NotificationManager from './components/NotificationManager';
 
 export const metadata = {
   title: 'Paginoid',
@@ -28,6 +29,7 @@ export default function RootLayout({
       <body className="bg-gray-50 text-gray-900">
         {/* 🔐 El AuthProvider envuelve toda la app */}
         <AuthProvider>
+          <NotificationManager /> 
           {children}
         </AuthProvider>
       </body>
