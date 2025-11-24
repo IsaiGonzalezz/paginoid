@@ -4,7 +4,7 @@ import React, { useEffect, useState } from 'react';
 import { collection, query, getDocs } from 'firebase/firestore';
 import { db } from '@/app/firebase/firebaseConfig';
 import { useAuth } from './AuthProvider';
-import { BellRing, Send, StopCircle } from 'lucide-react';
+import { BellRing, Send, StopCircle, Bug, RefreshCw } from 'lucide-react';
 
 // --- CONFIGURACIÓN ---
 const DEMO_MODE = true; 
@@ -91,17 +91,15 @@ const NotificationManager = () => {
                 body = `"${targetGoal.name}" es la más próxima (${timePhrase}).`;
             }
 
-            // Enviar notificación
-            await sendRobustNotification(title, body);
+            // Enviar notificación (con isDebug pasado desde el botón)
+            await sendRobustNotification(title, body, isManualTest);
 
             if (!DEMO_MODE && !isManualTest) {
                 localStorage.setItem(`last_notification_check_${userId}`, todayKey);
             }
 
         } catch (error: any) {
-            console.error("Error:", error);
-            // Solo alertar si es prueba manual para no molestar al usuario
-            if (isManualTest) console.warn(`Error silencioso en notificaciones: ${error.message}`);
+            if (isManualTest) alert(`Error lógico: ${error.message}`);
         }
     };
 
@@ -109,7 +107,7 @@ const NotificationManager = () => {
         if (!userId || permission !== 'granted') return;
 
         if (DEMO_MODE) {
-            const interval = setInterval(() => runCheck(true), 10000);
+            const interval = setInterval(() => runCheck(false), 10000);
             return () => clearInterval(interval);
         } else {
             const timer = setTimeout(() => runCheck(false), 3000);
@@ -117,55 +115,79 @@ const NotificationManager = () => {
         }
     }, [userId, permission]);
 
-    // --- ENVÍO 100% COMPATIBLE CON ANDROID ---
-    const sendRobustNotification = async (title: string, body: string) => {
+    // --- ENVÍO CON AUTOCURACIÓN ---
+    const sendRobustNotification = async (title: string, body: string, isDebug: boolean) => {
         const options: any = {
             body: body,
-            icon: 'icons/icon-192x192.png', // Asegúrate de tener este archivo si descomentas
-            badge: '/icon-192x192.png',
-            vibrate: [200, 100, 200],
-            tag: DEMO_MODE ? undefined : 'goal-alert',
-            data: { url: window.location.href }
+            requireInteraction: true,
+            tag: 'goal-alert'
         };
 
         try {
-            // ESTRATEGIA: Siempre intentar obtener el Registro del SW primero.
-            // "getRegistration" es más seguro que ".controller" o ".ready"
-            let swReg = await navigator.serviceWorker.getRegistration();
+            // 1. Verificar soporte
+            if (!('serviceWorker' in navigator)) {
+                if (isDebug) alert("❌ Tu navegador no soporta Service Workers (PWA).");
+                return;
+            }
 
-            if (swReg) {
-                // ¡Perfecto! Tenemos el SW, usamos la función correcta.
-                await swReg.showNotification(title, options);
-                console.log("✅ Notificación enviada vía SW (Android Friendly)");
-            } else {
-                // Si no hay registro, intentamos esperar a que esté listo
-                const readyReg = await navigator.serviceWorker.ready;
-                if (readyReg) {
-                    await readyReg.showNotification(title, options);
-                } else {
-                    // Solo si TODO lo de arriba falla (ej. en PC vieja), usamos la forma ilegal en Android
-                    // Pero la envolvemos en try/catch para que NO salga el error gris.
-                    try {
-                        new Notification(title, options);
-                    } catch (legacyError) {
-                        console.error("❌ Android bloqueó new Notification() y no se encontró SW activo.");
-                        // Aquí NO ponemos alert para no ensuciar la UI si falla silenciosamente
-                    }
+            // 2. Obtener Registro
+            let reg = await navigator.serviceWorker.getRegistration();
+
+            // --- AUTOCURACIÓN: Si no existe, lo registramos a la fuerza ---
+            if (!reg) {
+                if (isDebug) alert("⚠️ SW perdido. Intentando registrar '/sw.js' manualmente...");
+                
+                try {
+                    reg = await navigator.serviceWorker.register('/sw.js');
+                    if (isDebug) alert("✅ SW registrado con éxito. Esperando activación...");
+                    
+                    // Esperamos un poco a que se active
+                    await new Promise(resolve => setTimeout(resolve, 1000));
+                } catch (err: any) {
+                    if (isDebug) alert(`❌ Falló registro manual: ${err.message}. Verifica que el archivo sw.js exista en public.`);
+                    // Último intento desesperado con API clásica si falla el registro
+                    new Notification(title, options);
+                    return;
                 }
             }
+
+            // 3. Ejecutar notificación
+            if (reg) {
+                await reg.showNotification(title, options);
+                if (isDebug) console.log("🚀 Notificación enviada.");
+            }
+
         } catch (e: any) {
-            console.error("Fallo crítico en notificación:", e);
+            if (isDebug) alert(`❌ Error final: ${e.message}`);
         }
     };
 
     const handleRequestPermission = async () => {
         const result = await Notification.requestPermission();
         setPermission(result);
-        if (result === 'granted') setShowBell(false);
+        if (result === 'granted') {
+            setShowBell(false);
+            // Intentamos registrar el SW apenas nos den permiso por si acaso
+            if ('serviceWorker' in navigator) {
+                navigator.serviceWorker.register('/sw.js').catch(console.error);
+            }
+            alert("Permiso concedido. Prueba el botón gris.");
+        }
+    };
+
+    // Botón de Reset SW (Por si todo falla)
+    const resetSW = async () => {
+        if ('serviceWorker' in navigator) {
+            const registrations = await navigator.serviceWorker.getRegistrations();
+            for (let registration of registrations) {
+                await registration.unregister();
+            }
+            alert("🧹 Service Workers limpiados. Recarga la página para reinstalar.");
+            window.location.reload();
+        }
     };
 
     return (
-        // BOTONES ELEVADOS
         <div className="fixed bottom-32 left-4 z-50 flex flex-col gap-3 items-start pointer-events-none">
             
             {showBell && userId && (
@@ -179,13 +201,24 @@ const NotificationManager = () => {
 
             {userId && (
                 <div className="pointer-events-auto flex flex-col gap-2">
-                    <button
-                        onClick={() => runCheck(true)} 
-                        className="bg-gray-900/90 backdrop-blur-sm text-white px-4 py-3 rounded-xl shadow-xl flex items-center gap-2 text-xs font-bold border border-gray-700 active:scale-95 transition-all"
-                    >
-                        <Send className="w-4 h-4 text-green-400" /> 
-                        Probar Push
-                    </button>
+                    <div className="flex gap-2">
+                        <button
+                            onClick={() => runCheck(true)} 
+                            className="bg-gray-900/90 backdrop-blur-sm text-white px-4 py-3 rounded-xl shadow-xl flex items-center gap-2 text-xs font-bold border border-gray-700 active:scale-95 transition-all"
+                        >
+                            <Bug className="w-4 h-4 text-yellow-400" /> 
+                            Diagnóstico Push
+                        </button>
+                        
+                        {/* Botón de Pánico: Limpiar SW */}
+                        <button
+                            onClick={resetSW}
+                            className="bg-red-600/90 text-white p-3 rounded-xl shadow-xl flex items-center justify-center active:scale-95"
+                            title="Resetear Service Worker"
+                        >
+                            <RefreshCw className="w-4 h-4" />
+                        </button>
+                    </div>
                     
                     {DEMO_MODE && (
                         <span className="bg-red-500/90 text-white px-3 py-1 rounded-full text-[10px] font-bold flex items-center gap-1 animate-pulse shadow-lg backdrop-blur-sm">
